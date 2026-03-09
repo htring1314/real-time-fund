@@ -2073,7 +2073,6 @@ input[type="number"] {
 
 /* shadcn Dialog：符合项目规范(ui-ux-pro-max)，适配亮/暗主题，略微玻璃拟态 */
 [data-slot="dialog-content"] {
-  background: rgba(17, 24, 39, 0.96);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
