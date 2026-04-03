@@ -67,7 +67,7 @@ import { toast as sonnerToast } from 'sonner';
 import { recordValuation, getAllValuationSeries, clearFund } from './lib/valuationTimeseries';
 import { getAllDailyEarnings, recordDailyEarnings, clearDailyEarnings } from './lib/dailyEarnings';
 import { loadHolidaysForYears, isTradingDay as isDateTradingDay } from './lib/tradingCalendar';
-import { parseFundTextWithLLM, fetchFundData, fetchFundNetValue, fetchLatestRelease, fetchShanghaiIndexDate, fetchSmartFundNetValue, searchFunds } from './api/fund';
+import { parseFundTextWithLLM, fetchFundData, fetchFundNetValueRange, fetchLatestRelease, fetchShanghaiIndexDate, fetchSmartFundNetValue, searchFunds } from './api/fund';
 import packageJson from '../package.json';
 import PcFundTable from './components/PcFundTable';
 import MobileFundTable from './components/MobileFundTable';
@@ -2783,15 +2783,31 @@ export default function HomePage() {
               const lastNav = u?.lastNav != null && u.lastNav !== '' ? Number(u.lastNav) : null;
               if (lastNav != null && Number.isFinite(lastNav) && lastNav > 0) return lastNav;
             }
-            // 向前回溯查找上一交易日净值（最多回溯 30 天，覆盖长假）
-            for (let i = 1; i <= 30; i++) {
-              const prevDate = subDays(dateStr, i);
-              if (!isDateTradingDay(prevDate)) continue;
-              if (navCache.has(prevDate)) return navCache.get(prevDate);
-              const prevNav = await fetchFundNetValue(code, prevDate);
-              if (Number.isFinite(prevNav) && prevNav > 0) {
-                navCache.set(prevDate, prevNav);
-                return prevNav;
+            // 已批量拉取的区间净值（见 navCache）
+            if (navCache && navCache.size) {
+              let bestD = '';
+              let bestNav = null;
+              for (const d of navCache.keys()) {
+                if (!isValidDateStr(d) || d >= dateStr) continue;
+                const v = navCache.get(d);
+                if (!Number.isFinite(v) || v <= 0) continue;
+                if (!bestD || d > bestD) {
+                  bestD = d;
+                  bestNav = v;
+                }
+              }
+              if (bestNav != null) return bestNav;
+            }
+            const end = subDays(dateStr, 1);
+            const start = subDays(dateStr, 120);
+            const rows = await fetchFundNetValueRange(code, start, end);
+            for (const r of rows) {
+              if (navCache) navCache.set(r.date, r.nav);
+            }
+            for (let i = rows.length - 1; i >= 0; i--) {
+              if (rows[i].date < dateStr) {
+                const v = rows[i].nav;
+                if (Number.isFinite(v) && v > 0) return v;
               }
             }
             return null;
@@ -2848,41 +2864,27 @@ export default function HomePage() {
             if (!isValidDateStr(lastRecordedDate) || lastRecordedDate >= latestNavDate) continue;
 
             const navCache = new Map();
-            // 复用 fund 的最新净值，减少请求
             const latestNav = Number(u?.dwjz);
             if (Number.isFinite(latestNav) && latestNav > 0) navCache.set(latestNavDate, latestNav);
 
-            let prevNav = null;
             const start = addDays(lastRecordedDate, 1);
-            let cursor = start;
-            let guard = 0;
-            while (cursor <= latestNavDate) {
-              guard++;
-              if (guard > 370) break; // 保护：最多补 370 个自然日，避免异常情况下卡死
+            const navRows = await fetchFundNetValueRange(code, lastRecordedDate, latestNavDate);
+            for (const r of navRows) {
+              navCache.set(r.date, r.nav);
+            }
 
-              // 只在交易日尝试补齐，非交易日直接跳过
-              if (!isDateTradingDay(cursor)) {
-                cursor = addDays(cursor, 1);
-                continue;
-              }
+            const firstIdx = navRows.findIndex((r) => r.date >= start);
+            if (firstIdx === -1) continue;
 
-              let nav = navCache.has(cursor) ? navCache.get(cursor) : null;
-              if (nav == null) {
-                nav = await fetchFundNetValue(code, cursor);
-                if (Number.isFinite(nav) && nav > 0) navCache.set(cursor, nav);
-              }
-              if (!Number.isFinite(nav) || nav <= 0) {
-                cursor = addDays(cursor, 1);
-                continue;
-              }
+            for (let j = firstIdx; j < navRows.length; j++) {
+              const prevNav = j > 0
+                ? navRows[j - 1].nav
+                : await findPrevTradingNav(code, navRows[j].date, navCache, u);
+              if (!Number.isFinite(prevNav) || prevNav <= 0) continue;
 
-              if (prevNav == null) {
-                prevNav = await findPrevTradingNav(code, cursor, navCache, u);
-              }
-              if (!Number.isFinite(prevNav) || prevNav <= 0) {
-                cursor = addDays(cursor, 1);
-                continue;
-              }
+              const nav = navRows[j].nav;
+              const cursor = navRows[j].date;
+              if (!Number.isFinite(nav) || nav <= 0) continue;
 
               const earnings = calcEarningsFromNavs(nav, prevNav, share);
               const rate = calcRateFromNavs(nav, prevNav);
@@ -2891,9 +2893,6 @@ export default function HomePage() {
                 nextDailyMap[code] = list;
                 changed = true;
               }
-
-              prevNav = nav;
-              cursor = addDays(cursor, 1);
             }
           }
           if (changed) {

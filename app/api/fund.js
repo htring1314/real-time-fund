@@ -187,6 +187,44 @@ const parseNetValuesFromLsjzContent = (content) => {
   return results.reverse();
 };
 
+/**
+ * 按日期区间批量拉取历史净值（lsjz），支持分页，减少逐日请求次数。
+ * @param {string} code 基金代码
+ * @param {string} sdate 开始 YYYY-MM-DD
+ * @param {string} edate 结束 YYYY-MM-DD
+ * @returns {Promise<Array<{ date: string, nav: number, growth: number|null }>>} 按日期升序
+ */
+export const fetchFundNetValueRange = async (code, sdate, edate) => {
+  if (typeof window === 'undefined') return [];
+  if (!isString(code) || !String(code).trim()) return [];
+  if (!isString(sdate) || !isString(edate) || !/^\d{4}-\d{2}-\d{2}$/.test(sdate) || !/^\d{4}-\d{2}-\d{2}$/.test(edate)) {
+    return [];
+  }
+  if (sdate > edate) return [];
+
+  const c = String(code).trim();
+  const merged = new Map();
+  let pageNum = 1;
+  const per = 500;
+  while (true) {
+    const url = `https://fundf10.eastmoney.com/F10DataApi.aspx?type=lsjz&code=${c}&page=${pageNum}&per=${per}&sdate=${sdate}&edate=${edate}`;
+    try {
+      const apidata = await loadScript(url);
+      const content = apidata?.content || '';
+      const batch = parseNetValuesFromLsjzContent(content);
+      if (!batch.length) break;
+      for (const row of batch) {
+        merged.set(row.date, row);
+      }
+      if (batch.length < per) break;
+      pageNum += 1;
+    } catch {
+      break;
+    }
+  }
+  return Array.from(merged.values()).sort((a, b) => a.date.localeCompare(b.date));
+};
+
 const extractHoldingsReportDate = (html) => {
   if (!html) return null;
 

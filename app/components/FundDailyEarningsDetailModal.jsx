@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CloseIcon } from './Icons';
+import { CloseIcon, SwitchIcon } from './Icons';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Drawer, DrawerClose, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 
@@ -33,6 +33,7 @@ export default function FundDailyEarningsDetailModal({
   title = '收益明细',
 }) {
   const [isMobile, setIsMobile] = useState(false);
+  const [showRateMode, setShowRateMode] = useState(false);
   const scrollRef = useRef(null);
   const colors = useMemo(() => getChartThemeColors(theme), [theme]);
 
@@ -56,6 +57,21 @@ export default function FundDailyEarningsDetailModal({
       const v = d?.earnings;
       return (typeof v === 'number' && Number.isFinite(v)) ? sum + v : sum;
     }, 0);
+  }, [rows]);
+
+  const totalRate = useMemo(() => {
+    if (!rows.length) return null;
+    let compound = 1;
+    let hasValidRate = false;
+    for (const r of rows) {
+      const rate = r?.rate;
+      if (typeof rate === 'number' && Number.isFinite(rate)) {
+        compound *= (1 + rate / 100);
+        hasValidRate = true;
+      }
+    }
+    if (!hasValidRate) return null;
+    return (compound - 1) * 100;
   }, [rows]);
 
   const maxAbs = useMemo(() => {
@@ -93,86 +109,145 @@ export default function FundDailyEarningsDetailModal({
 
   const sumColor = masked
     ? 'var(--muted)'
-    : totalEarnings >= 0
-      ? colors.danger
-      : colors.success;
+    : showRateMode
+      ? (totalRate == null ? 'var(--muted)' : (totalRate >= 0 ? colors.danger : colors.success))
+      : (totalEarnings >= 0 ? colors.danger : colors.success);
 
   const body = (
-    <div ref={scrollRef} style={{ maxHeight: '78vh', overflowY: 'auto', paddingRight: 4 }}>
-      <div style={{ padding: '6px 2px 12px', textAlign: 'center' }}>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>累计收益(元)</div>
+    <div
+      ref={scrollRef}
+      style={{ maxHeight: "78vh", overflowY: "auto", paddingRight: 4 }}
+    >
+      <div style={{ padding: "6px 2px 12px", textAlign: "center" }}>
+        <div
+          className="muted"
+          onClick={() => setShowRateMode((v) => !v)}
+          style={{
+            fontSize: 12,
+            marginBottom: 6,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            cursor: 'pointer',
+          }}
+        >
+          <span>{showRateMode ? "累计收益率" : "累计收益(元)"}</span>
+          <button
+            type="button"
+            style={{
+              border: "none",
+              background: "transparent",
+              padding: 2,
+              cursor: "pointer",
+              opacity: 0.7,
+              display: "flex",
+              alignItems: "center",
+            }}
+            title={showRateMode ? "切换为累计收益" : "切换为累计收益率"}
+          >
+            <SwitchIcon props={{ width: 14, height: 14 }} />
+          </button>
+        </div>
         <div
           style={{
             fontSize: 32,
             fontWeight: 700,
-            fontVariantNumeric: 'tabular-nums',
+            fontVariantNumeric: "tabular-nums",
             color: sumColor,
             lineHeight: 1.1,
+            cursor: 'pointer',
           }}
+          onClick={() => setShowRateMode((v) => !v)}
         >
-          {masked ? '***' : `${totalEarnings >= 0 ? '+' : '-'}${Math.abs(totalEarnings).toFixed(2)}`}
+          {masked
+            ? "***"
+            : showRateMode
+              ? totalRate == null
+                ? "—"
+                : `${totalRate >= 0 ? "+" : ""}${totalRate.toFixed(2)}%`
+              : `${totalEarnings >= 0 ? "+" : "-"}${Math.abs(totalEarnings).toFixed(2)}`}
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '6px 2px 2px' }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          padding: "6px 2px 2px",
+        }}
+      >
         {rows.length === 0 && (
-          <div style={{ padding: '16px 0', textAlign: 'center' }}>
-            <span className="muted" style={{ fontSize: 12 }}>暂无数据</span>
+          <div style={{ padding: "16px 0", textAlign: "center" }}>
+            <span className="muted" style={{ fontSize: 12 }}>
+              暂无数据
+            </span>
           </div>
         )}
 
         {rows.map((row, idx) => {
           const v = row?.earnings;
-          const isValid = typeof v === 'number' && Number.isFinite(v);
+          const isValid = typeof v === "number" && Number.isFinite(v);
           const value = isValid ? v : 0;
-          const rate = typeof row?.rate === 'number' && Number.isFinite(row.rate) ? row.rate : null;
+          const rate =
+            typeof row?.rate === "number" && Number.isFinite(row.rate)
+              ? row.rate
+              : null;
           const ratio = Math.min(1, Math.abs(value) / maxAbs);
 
           // 参照截图：涨红跌绿（CN 市场风格）
-          const barColor = value > 0 ? colors.danger : value < 0 ? colors.success : '#94a3b8';
-          const trackBg = theme === 'light' ? '#eef2f7' : '#0b1220';
+          const barColor =
+            value > 0 ? colors.danger : value < 0 ? colors.success : "#94a3b8";
+          const trackBg = theme === "light" ? "#eef2f7" : "#0b1220";
 
           const centerPct = 50;
           const halfWidthPct = ratio * 50;
           const barLeft = value >= 0 ? centerPct : centerPct - halfWidthPct;
           const barWidth = halfWidthPct;
 
-          const textColor = theme === 'light' ? 'rgba(15,23,42,0.9)' : 'rgba(255,255,255,0.92)';
+          const textColor =
+            theme === "light" ? "rgba(15,23,42,0.9)" : "rgba(255,255,255,0.92)";
           const showValue = masked
-            ? '***'
+            ? "***"
             : isValid
-              ? `${value > 0 ? '' : value < 0 ? '-' : ''}${Math.abs(value).toFixed(2)}`
-              : '—';
+              ? `${value > 0 ? "" : value < 0 ? "-" : ""}${Math.abs(value).toFixed(2)}`
+              : "—";
           const showRate = masked
-            ? ''
-            : (rate == null ? '' : `${rate > 0 ? '+' : ''}${rate.toFixed(2)}%`);
+            ? ""
+            : rate == null
+              ? ""
+              : `${rate > 0 ? "+" : ""}${rate.toFixed(2)}%`;
 
           return (
             <div
-              key={`${row?.date || 'row'}_${idx}`}
+              key={`${row?.date || "row"}_${idx}`}
               style={{
-                position: 'relative',
+                position: "relative",
                 height: 38,
                 borderRadius: 10,
-                overflow: 'hidden',
+                overflow: "hidden",
                 background: trackBg,
-                border: '1px solid var(--border)',
+                border: "1px solid var(--border)",
               }}
             >
               <div
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   top: 0,
                   bottom: 0,
-                  left: '50%',
+                  left: "50%",
                   width: 1,
-                  background: theme === 'light' ? 'rgba(148,163,184,0.6)' : 'rgba(148,163,184,0.35)',
+                  background:
+                    theme === "light"
+                      ? "rgba(148,163,184,0.6)"
+                      : "rgba(148,163,184,0.35)",
                 }}
               />
 
               <div
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   top: 0,
                   bottom: 0,
                   left: `${barLeft}%`,
@@ -183,38 +258,53 @@ export default function FundDailyEarningsDetailModal({
 
               <div
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   left: 12,
                   top: 0,
                   bottom: 0,
-                  display: 'flex',
-                  alignItems: 'center',
+                  display: "flex",
+                  alignItems: "center",
                   fontSize: 13,
-                  fontVariantNumeric: 'tabular-nums',
+                  fontVariantNumeric: "tabular-nums",
                   color: textColor,
                 }}
               >
-                {row?.date || '—'}
+                {row?.date || "—"}
               </div>
 
               <div
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   right: 12,
                   top: 0,
                   bottom: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
                   fontSize: 13,
-                  fontVariantNumeric: 'tabular-nums',
+                  fontVariantNumeric: "tabular-nums",
                   color: textColor,
                 }}
               >
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.05, gap: 2 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    lineHeight: 1.05,
+                    gap: 2,
+                  }}
+                >
                   <div>{showValue}</div>
                   {showRate ? (
-                    <div className="muted" style={{ fontSize: 11, opacity: 0.9, fontVariantNumeric: 'tabular-nums' }}>
+                    <div
+                      className="muted"
+                      style={{
+                        fontSize: 11,
+                        opacity: 0.9,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
                       {showRate}
                     </div>
                   ) : null}
