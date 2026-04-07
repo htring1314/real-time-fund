@@ -1127,18 +1127,13 @@ export default function HomePage() {
   // 自动滚动选中 Tab 到可视区域
   useEffect(() => {
     if (!tabsRef.current) return;
-    const container = tabsRef.current;
     if (currentTab === 'all') {
-      container.scrollTo({ left: 0, behavior: 'smooth' });
+      tabsRef.current.scrollTo({ left: 0, behavior: 'smooth' });
       return;
     }
-    const activeTab = container.querySelector('.tab.active');
+    const activeTab = tabsRef.current.querySelector('.tab.active');
     if (activeTab) {
-      // 手动计算滚动位置，避免 scrollIntoView 导致页面垂直滚动
-      const containerRect = container.getBoundingClientRect();
-      const tabRect = activeTab.getBoundingClientRect();
-      const scrollLeft = container.scrollLeft + (tabRect.left - containerRect.left) - (container.clientWidth / 2) + (tabRect.width / 2);
-      container.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
+      activeTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
     }
   }, [currentTab]);
 
